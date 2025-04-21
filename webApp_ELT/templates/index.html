@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Status Distribution</title>
+</head>
+<body>
+    <h1>Order Status Distribution</h1>
+    {% for product_id, chart in charts.items() %}
+        <h2>Product ID: {{ product_id }}</h2>
+        <img src="data:image/png;base64,{{ chart }}" alt="Pie chart for {{ product_id }}">
+    {% endfor %}
+</body>
+</html>
