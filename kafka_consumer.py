@@ -7,6 +7,8 @@ from collections import defaultdict
 from geopy.geocoders import Nominatim
 import requests
 from geopy.distance import geodesic
+from pymongo import MongoClient
+from bson import ObjectId
 
 class CommandType(Enum):
     PLACE_ORDER = 1
@@ -126,6 +128,7 @@ def consume_kafka_topic():
 
     # Add debugging logs to inspect raw messages
     orders = []
+    UserId = None
     reference_ip = "139.167.57.66"
     for message in consumer:
         try:
@@ -143,6 +146,30 @@ def consume_kafka_topic():
                     # Fetch and print geolocation
                     geolocation = get_geolocation(ip_address)
                     print("Geolocation:", geolocation)
+
+                    # Extract userId from the message
+                    UserId = data.get('userId')
+                    if UserId:
+                        # Fetch user details from MongoDB using UserId
+                        user = user_repo.find_by_user_id(UserId)
+                        if user:
+                            print("User details fetched from MongoDB:", user)
+
+                            # Check if the extracted IP address is in the user's ipAddresses list
+                            if ip_address not in user.get('ipAddresses', []):
+                                user_repo.collection.update_one(
+                                    {"_id": user["_id"]},
+                                    {"$push": {"ipAddresses": ip_address}}
+                                )
+                                print(f"IP Address {ip_address} added to user's ipAddresses list.")
+                            else:
+                                print(f"IP Address {ip_address} already exists in user's ipAddresses list. Skipping update.")
+                                                    
+                        else:
+                            print(f"No user found with user ID: {UserId}")
+                    else:
+                        print("UserId not found in the message.")
+
 
                     # Calculate and print distance to reference IP
                     distance = calculate_distance(reference_ip, ip_address)
@@ -164,5 +191,83 @@ def consume_kafka_topic():
             analyze_and_plot_orders(orders)
             orders.clear()
 
+class User:
+    def __init__(self, id, created_at, updated_at, email, password_hash, password_salt, two_step_verification_type, gotp_secret, nick_name, ip_addresses):
+        self.id = id
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.email = email
+        self.password_hash = password_hash
+        self.password_salt = password_salt
+        self.two_step_verification_type = two_step_verification_type
+        self.gotp_secret = gotp_secret
+        self.nick_name = nick_name
+        self.ip_addresses = ip_addresses
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+            "email": self.email,
+            "passwordHash": self.password_hash,
+            "passwordSalt": self.password_salt,
+            "twoStepVerificationType": self.two_step_verification_type,
+            "gotpSecret": self.gotp_secret,
+            "nickName": self.nick_name,
+            "ipAddresses": self.ip_addresses,
+        }
+
+class UserRepository:
+    def __init__(self, database):
+        # Use the lowercase name of the User class as the collection name
+        self.collection = database[User.__name__.lower()]
+        self.collection.create_index("email", unique=True)
+
+    def find_by_user_id(self, user_id):
+        # Query the `_id` field in the database to match the userId
+        return self.collection.find_one({"_id": user_id})
+
+    def save_or_update(self, user):
+        # Insert or update user based on the id field
+        self.collection.update_one(
+            {"id": user["id"]},
+            {"$set": user},
+            upsert=True
+        )
+
 if __name__ == "__main__":
+    # MongoDB connection URI
+    MONGODB_URI = "mongodb://localhost:27017,localhost:27018,localhost:27019/?replicaSet=rs0"
+
+    # Connect to MongoDB
+    try:
+        client = MongoClient(MONGODB_URI)
+        print("Connected to MongoDB successfully!")
+
+        # Example: Access a database and collection
+        db = client["gitbitex"]
+        collection = db["user"]
+
+        # Example usage
+        user_repo = UserRepository(db)
+
+        # Fetch user by email
+        email = "test@example.com"
+        user = user_repo.find_by_email(email)
+        if user:
+            print("User found by email:", user)
+        else:
+            print("No user found with email:", email)
+
+        # Fetch user by user ID
+       
+        user = user_repo.find_by_user_id(UserId)
+        if user:
+            print("User found by user ID:", user)
+        else:
+            print("No user found with user ID:", user_id)
+    except Exception as e:
+        print("Error connecting to MongoDB:", e)
+
     consume_kafka_topic()
