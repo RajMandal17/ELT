@@ -2,7 +2,7 @@
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install kafka-python matplotlib
+pip install kafka-python matplotlib requests geopy
 
 # Run the Kafka consumer application
 echo "Running kafka_consumer.py..."

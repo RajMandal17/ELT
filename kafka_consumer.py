@@ -4,6 +4,9 @@ import struct
 from enum import Enum
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from geopy.geocoders import Nominatim
+import requests
+from geopy.distance import geodesic
 
 class CommandType(Enum):
     PLACE_ORDER = 1
@@ -49,7 +52,7 @@ def custom_deserializer(message_bytes):
         print("Message is too short to contain a valid command type byte.")
         return None
     except Exception as e:
-        print("Deserialization error:", e)
+     #   print("Deserialization error:", e)
         return None
 
 def analyze_and_plot_orders(orders):
@@ -72,6 +75,45 @@ def analyze_and_plot_orders(orders):
         plt.title(f"Order Status Distribution for Product ID: {product_id}")
         plt.show()
 
+def get_geolocation(ip_address):
+    try:
+        # Use an external API to fetch geolocation data
+        response = requests.get(f"https://ipinfo.io/{ip_address}/json")
+        if response.status_code == 200:
+            data = response.json()
+            city = data.get('city', 'Unknown')
+            region = data.get('region', 'Unknown')
+            country = data.get('country', 'Unknown')
+            return f"{city}, {region}, {country}"
+        else:
+            return "Geolocation not found"
+    except Exception as e:
+        print("Error fetching geolocation:", e)
+        return "Error"
+
+def get_coordinates(ip_address):
+    try:
+        # Use an external API to fetch geolocation data
+        response = requests.get(f"https://ipinfo.io/{ip_address}/json")
+        if response.status_code == 200:
+            data = response.json()
+            loc = data.get('loc', None)  # 'loc' contains latitude and longitude as a string
+            if loc:
+                return tuple(map(float, loc.split(',')))
+        return None
+    except Exception as e:
+        print("Error fetching coordinates:", e)
+        return None
+
+def calculate_distance(ip1, ip2):
+    coords1 = get_coordinates(ip1)
+    coords2 = get_coordinates(ip2)
+
+    if coords1 and coords2:
+        return geodesic(coords1, coords2).kilometers
+    else:
+        return None
+
 def consume_kafka_topic():
     # Create a Kafka consumer for the 'matching-engine-command' topic
     consumer = KafkaConsumer(
@@ -84,16 +126,30 @@ def consume_kafka_topic():
 
     # Add debugging logs to inspect raw messages
     orders = []
+    reference_ip = "139.167.57.66"
     for message in consumer:
         try:
             print("Raw message received (bytes):", message.value)
             if message.value:
-                data = custom_deserializer(message.value)
-                print("Deserialized message:", data)
-
+                data = message.value  # Directly use message.value as it is already deserialized
                 # Collect PLACE_ORDER messages
                 if data and data.get('type') == 'PLACE_ORDER':
                     orders.append(data)
+
+                    # Extract ip_Address from the message
+                    ip_address = "91.92.202.179"
+                    print("Extracted IP Address:", ip_address)
+
+                    # Fetch and print geolocation
+                    geolocation = get_geolocation(ip_address)
+                    print("Geolocation:", geolocation)
+
+                    # Calculate and print distance to reference IP
+                    distance = calculate_distance(reference_ip, ip_address)
+                    if distance is not None:
+                        print(f"Distance to {reference_ip}: {distance:.2f} km")
+                    else:
+                        print("Could not calculate distance.")
 
             else:
                 print("Empty message received.")
